@@ -1,15 +1,16 @@
-﻿using System;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
+using System.Threading;
 
 namespace TetrisConsole
 {
-    // Клас блоку, який формує ігрові фігури
+    // A single cell that makes up a shape
     public class Block
     {
-        public int X { get; set; } // X-координата блоку на полі
-        public int Y { get; set; } // Y-координата блоку на полі
+        public int X { get; set; } // column on the board
+        public int Y { get; set; } // row on the board
 
         public Block(int x, int y)
         {
@@ -18,91 +19,90 @@ namespace TetrisConsole
         }
     }
 
-    // Клас фігури
+    // A falling shape made of several blocks
     public class Shape
     {
-        public List<Block> Blocks { get; private set; } // Список блоків, які утворюють фігуру
+        public List<Block> Blocks { get; }
 
         public Shape(List<Block> blocks)
         {
             Blocks = blocks;
         }
 
-        // Оновлення позиції фігури (переміщення вниз на 1)
-        public void MoveDown()
+        public void Move(int dx, int dy)
         {
             foreach (var block in Blocks)
             {
-                block.Y += 1;
+                block.X += dx;
+                block.Y += dy;
             }
         }
 
-        // Переміщення вліво
-        public void MoveLeft()
-        {
-            foreach (var block in Blocks)
-            {
-                block.X -= 1;
-            }
-        }
-
-        // Переміщення вправо
-        public void MoveRight()
-        {
-            foreach (var block in Blocks)
-            {
-                block.X += 1;
-            }
-        }
+        public void MoveDown() => Move(0, 1);
+        public void MoveUp() => Move(0, -1);
+        public void MoveLeft() => Move(-1, 0);
+        public void MoveRight() => Move(1, 0);
     }
 
-    // Клас ігрового поля
+    // The playing field and game rules
     public class GameBoard
     {
         private const int Width = 10;
         private const int Height = 20;
-        private Block[,] grid = new Block[Width, Height];
-        private Shape currentShape;
-        private Random random = new Random();
+        private readonly Block?[,] grid = new Block?[Width, Height];
+        private readonly Random random = new Random();
+        private Shape currentShape = null!;
 
-        // Ініціалізувати нову фігуру
+        public int Score { get; private set; }
+        public bool IsGameOver { get; private set; }
+
+        // Spawn a new shape at the top; the game ends if it doesn't fit
         public void SpawnNewShape()
         {
             currentShape = GetRandomShape();
             if (!IsPositionValid(currentShape.Blocks))
             {
-                Console.WriteLine("Гра завершена!");
-                Environment.Exit(0);
+                IsGameOver = true;
             }
         }
 
-        // Отримати випадкову фігуру
         private Shape GetRandomShape()
         {
             int type = random.Next(0, 3);
             List<Block> blocks = type switch
             {
-                0 => new List<Block> { new Block(4, 0), new Block(5, 0), new Block(4, 1), new Block(5, 1) }, // Квадрат
-                1 => new List<Block> { new Block(5, 0), new Block(4, 0), new Block(6, 0), new Block(5, 1) }, // Т-подібна
-                _ => new List<Block> { new Block(4, 0), new Block(5, 0), new Block(6, 0), new Block(7, 0) }  // Лінія
+                0 => new List<Block> { new Block(4, 0), new Block(5, 0), new Block(4, 1), new Block(5, 1) }, // square
+                1 => new List<Block> { new Block(5, 0), new Block(4, 0), new Block(6, 0), new Block(5, 1) }, // T-shape
+                _ => new List<Block> { new Block(3, 0), new Block(4, 0), new Block(5, 0), new Block(6, 0) }  // line
             };
             return new Shape(blocks);
         }
 
-        // Оновити стан гри (переміщення поточної фігури вниз)
+        // One gravity tick: move the shape down, or lock it if it has landed
         public void UpdateGame()
         {
             currentShape.MoveDown();
             if (!IsPositionValid(currentShape.Blocks))
             {
-                currentShape.MoveDown();
+                currentShape.MoveUp(); // undo the move that collided
                 AddShapeToGrid();
                 ClearCompletedRows();
                 SpawnNewShape();
             }
         }
 
-        // Додати фігуру до сітки
+        public void TryMoveLeft()
+        {
+            currentShape.MoveLeft();
+            if (!IsPositionValid(currentShape.Blocks)) currentShape.MoveRight();
+        }
+
+        public void TryMoveRight()
+        {
+            currentShape.MoveRight();
+            if (!IsPositionValid(currentShape.Blocks)) currentShape.MoveLeft();
+        }
+
         private void AddShapeToGrid()
         {
             foreach (var block in currentShape.Blocks)
@@ -111,12 +111,12 @@ namespace TetrisConsole
             }
         }
 
-        // Перевірка на валідність позиції
         private bool IsPositionValid(List<Block> blocks)
         {
             foreach (var block in blocks)
             {
-                if (block.X < 0 || block.X >= Width || block.Y >= Height || (block.Y >= 0 && grid[block.X, block.Y] != null))
+                if (block.X < 0 || block.X >= Width || block.Y >= Height ||
+                    (block.Y >= 0 && grid[block.X, block.Y] != null))
                 {
                     return false;
                 }
@@ -124,7 +124,7 @@ namespace TetrisConsole
             return true;
         }
 
-        // Очищення завершених рядків
+        // Remove full rows and shift everything above them down
         private void ClearCompletedRows()
         {
             for (int y = Height - 1; y >= 0; y--)
@@ -141,12 +141,6 @@ namespace TetrisConsole
 
                 if (rowComplete)
                 {
-                    for (int x = 0; x < Width; x++)
-                    {
-                        grid[x, y] = null;
-                    }
-
-                    // Зсув усіх рядків вниз
                     for (int yy = y; yy > 0; yy--)
                     {
                         for (int xx = 0; xx < Width; xx++)
@@ -154,42 +148,80 @@ namespace TetrisConsole
                             grid[xx, yy] = grid[xx, yy - 1];
                         }
                     }
-                    y++; // Перевірити той самий рядок ще раз
+                    for (int xx = 0; xx < Width; xx++)
+                    {
+                        grid[xx, 0] = null;
+                    }
+
+                    Score += 100;
+                    y++; // re-check the same row after shifting
                 }
             }
         }
 
-        // Відображення ігрового поля
         public void Display()
         {
-            Console.Clear();
+            var sb = new StringBuilder();
             for (int y = 0; y < Height; y++)
             {
                 for (int x = 0; x < Width; x++)
                 {
-                    if (grid[x, y] != null || currentShape.Blocks.Any(b => b.X == x && b.Y == y))
-                        Console.Write("■ ");
-                    else
-                        Console.Write(". ");
+                    bool filled = grid[x, y] != null || currentShape.Blocks.Any(b => b.X == x && b.Y == y);
+                    sb.Append(filled ? "■ " : ". ");
                 }
-                Console.WriteLine();
+                sb.AppendLine();
             }
+            sb.AppendLine($"Score: {Score}");
+            sb.AppendLine("←/→ move   ↓ drop faster   Q quit");
+
+            Console.SetCursorPosition(0, 0); // redraw in place instead of clearing to avoid flicker
+            Console.Write(sb.ToString());
         }
     }
 
     class Program
     {
+        private const int TickMs = 500; // time between gravity steps
+        private const int FrameMs = 50; // input polling interval
+
         static void Main(string[] args)
         {
-            GameBoard board = new GameBoard();
-            board.SpawnNewShape();
+            Console.OutputEncoding = Encoding.UTF8;
+            Console.CursorVisible = false;
+            Console.Clear();
 
-            while (true)
+            var board = new GameBoard();
+            board.SpawnNewShape();
+            int elapsed = 0;
+
+            while (!board.IsGameOver)
             {
-                board.UpdateGame();
-                board.Display();
-                System.Threading.Thread.Sleep(500); // Затримка для уповільнення падіння фігур
+                while (Console.KeyAvailable)
+                {
+                    switch (Console.ReadKey(true).Key)
+                    {
+                        case ConsoleKey.LeftArrow: board.TryMoveLeft(); break;
+                        case ConsoleKey.RightArrow: board.TryMoveRight(); break;
+                        case ConsoleKey.DownArrow: board.UpdateGame(); break;
+                        case ConsoleKey.Q:
+                            Console.CursorVisible = true;
+                            return;
+                    }
+                }
+
+                elapsed += FrameMs;
+                if (elapsed >= TickMs)
+                {
+                    board.UpdateGame();
+                    elapsed = 0;
+                }
+
+                if (!board.IsGameOver) board.Display();
+                Thread.Sleep(FrameMs);
             }
+
+            Console.CursorVisible = true;
+            Console.WriteLine($"Game over! Final score: {board.Score}");
         }
     }
 }

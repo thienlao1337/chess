@@ -1,16 +1,19 @@
-﻿using System;
-using System.Collections.Generic;
+using System;
 using System.Text;
 
 namespace ChessProject
 {
-    // Клас шахової фігури
+    public enum PieceType { King, Queen, Rook, Knight, Bishop, Pawn }
+
+    public enum PieceColor { White, Black }
+
+    // A single chess piece
     public class Piece
     {
-        public string Type { get; private set; } // Тип фігури, наприклад, "Пішак", "Король"
-        public string Color { get; private set; } // Колір фігури, наприклад, "Білий" або "Чорний"
+        public PieceType Type { get; }
+        public PieceColor Color { get; }
 
-        public Piece(string type, string color)
+        public Piece(PieceType type, PieceColor color)
         {
             Type = type;
             Color = color;
@@ -18,76 +21,100 @@ namespace ChessProject
 
         public override string ToString()
         {
-            // Скорочене позначення фігури
+            // Short notation: uppercase for White, lowercase for Black
             string symbol = Type switch
             {
-                "Король" => "K",
-                "Ферзь" => "Q",
-                "Тура" => "R",
-                "Кінь" => "N",
-                "Слон" => "B",
-                "Пішак" => "P",
+                PieceType.King => "K",
+                PieceType.Queen => "Q",
+                PieceType.Rook => "R",
+                PieceType.Knight => "N",
+                PieceType.Bishop => "B",
+                PieceType.Pawn => "P",
                 _ => "?"
             };
-            return Color == "Білий" ? symbol : symbol.ToLower(); // Маленькі літери для чорних фігур
+            return Color == PieceColor.White ? symbol : symbol.ToLower();
         }
     }
 
-    // Клас шахової дошки
+    // The chess board
     public class Board
     {
-        private Piece[,] squares = new Piece[8, 8]; // Масив 8х8 для зберігання фігур на дошці
+        private readonly Piece?[,] squares = new Piece?[8, 8]; // 8x8 grid holding the pieces
 
-        // Ініціалізувати дошку з початковими позиціями фігур
+        // Place all pieces in their starting positions
         public void InitializeBoard()
         {
-            // Розміщення пішаків
             for (int i = 0; i < 8; i++)
             {
-                squares[i, 1] = new Piece("Пішак", "Білий");
-                squares[i, 6] = new Piece("Пішак", "Чорний");
+                squares[i, 1] = new Piece(PieceType.Pawn, PieceColor.White);
+                squares[i, 6] = new Piece(PieceType.Pawn, PieceColor.Black);
             }
 
-            // Розміщення інших фігур
-            string[] pieceOrder = { "Тура", "Кінь", "Слон", "Ферзь", "Король", "Слон", "Кінь", "Тура" };
+            PieceType[] backRank =
+            {
+                PieceType.Rook, PieceType.Knight, PieceType.Bishop, PieceType.Queen,
+                PieceType.King, PieceType.Bishop, PieceType.Knight, PieceType.Rook
+            };
             for (int i = 0; i < 8; i++)
             {
-                squares[i, 0] = new Piece(pieceOrder[i], "Білий");
-                squares[i, 7] = new Piece(pieceOrder[i], "Чорний");
+                squares[i, 0] = new Piece(backRank[i], PieceColor.White);
+                squares[i, 7] = new Piece(backRank[i], PieceColor.Black);
             }
         }
 
-        // Перетворення шахової нотації в координати масиву
-        private (int x, int y) ConvertChessNotation(string notation)
+        // Convert chess notation (e.g. "e2") to array coordinates
+        private static (int x, int y) ConvertChessNotation(string notation)
         {
             if (notation.Length == 2 &&
                 notation[0] >= 'a' && notation[0] <= 'h' &&
                 notation[1] >= '1' && notation[1] <= '8')
             {
-                int x = notation[0] - 'a'; // Перетворення букви в колонку (0-7)
-                int y = notation[1] - '1'; // Перетворення цифри в рядок (0-7)
+                int x = notation[0] - 'a'; // file a-h -> column 0-7
+                int y = notation[1] - '1'; // rank 1-8 -> row 0-7
                 return (x, y);
             }
-            throw new ArgumentException("Неправильний формат шахової нотації.");
+            throw new ArgumentException($"Invalid square '{notation}'. Use a file a-h and a rank 1-8, e.g. e2.");
         }
 
-        public bool MovePiece(string start, string end)
+        // Move a piece of the given color. Returns true if the move was made.
+        public bool MovePiece(string start, string end, PieceColor currentPlayer)
         {
             try
             {
                 var (startX, startY) = ConvertChessNotation(start);
                 var (endX, endY) = ConvertChessNotation(end);
 
-                Piece piece = squares[startX, startY];
+                Piece? piece = squares[startX, startY];
                 if (piece == null)
                 {
-                    Console.WriteLine("На цій позиції немає фігури!");
+                    Console.WriteLine("There is no piece on that square.");
+                    return false;
+                }
+
+                if (piece.Color != currentPlayer)
+                {
+                    Console.WriteLine($"It's {currentPlayer}'s turn — you can't move the opponent's piece.");
+                    return false;
+                }
+
+                if (startX == endX && startY == endY)
+                {
+                    Console.WriteLine("The start and end squares are the same.");
+                    return false;
+                }
+
+                Piece? target = squares[endX, endY];
+                if (target != null && target.Color == piece.Color)
+                {
+                    Console.WriteLine("You can't capture your own piece.");
                     return false;
                 }
 
                 squares[endX, endY] = piece;
                 squares[startX, startY] = null;
-                Console.WriteLine($"Переміщено {piece} з {start} на {end}");
+
+                string capture = target != null ? $", capturing {target}" : "";
+                Console.WriteLine($"Moved {piece} from {start} to {end}{capture}");
                 return true;
             }
             catch (ArgumentException ex)
@@ -99,65 +126,63 @@ namespace ChessProject
 
         public void DisplayBoard()
         {
-            Console.WriteLine("  a  b  c  d  e  f  g  h");
+            Console.WriteLine("  a b c d e f g h");
             for (int y = 7; y >= 0; y--)
             {
                 Console.Write($"{y + 1} ");
                 for (int x = 0; x < 8; x++)
                 {
-                    if (squares[x, y] != null)
-                        Console.Write($"{squares[x, y]} ");
-                    else
-                        Console.Write(". ");
+                    Console.Write(squares[x, y] != null ? $"{squares[x, y]} " : ". ");
                 }
-                Console.WriteLine($" {y + 1}");
+                Console.WriteLine($"{y + 1}");
             }
-            Console.WriteLine("  a  b  c  d  e  f  g  h");
+            Console.WriteLine("  a b c d e f g h");
         }
     }
 
-    // Клас гри
+    // Game loop: reads moves from the console and alternates turns
     public class Game
     {
-        private Board board;
-
-        public Game()
-        {
-            board = new Board();
-        }
+        private readonly Board board = new Board();
+        private PieceColor currentPlayer = PieceColor.White;
 
         public void Initialize()
         {
-            Console.WriteLine("Ініціалізація гри...");
-            board.InitializeBoard(); // Ініціалізуємо дошку з початковими позиціями
+            Console.WriteLine("Setting up the board...");
+            board.InitializeBoard();
         }
 
         public void Start()
         {
-            Console.WriteLine("Початок гри...");
+            Console.WriteLine("Game started.");
             board.DisplayBoard();
 
             while (true)
             {
-                Console.WriteLine("Введіть хід (формат: стартова_позиція кінцева_позиція, наприклад 'e2 e4'), або 'вихід' для завершення:");
-                string input = Console.ReadLine();
+                Console.WriteLine($"{currentPlayer} to move (e.g. 'e2 e4'), or 'exit' to quit:");
+                string? input = Console.ReadLine();
 
-                if (input.ToLower() == "вихід")
+                // ReadLine returns null when input is closed (e.g. Ctrl+Z / Ctrl+D)
+                if (input == null || input.Trim().Equals("exit", StringComparison.OrdinalIgnoreCase))
                 {
-                    Console.WriteLine("Гра завершена. Дякуємо за гру!");
+                    Console.WriteLine("Game over. Thanks for playing!");
                     break;
                 }
 
-                string[] parts = input.Split(' ');
+                string[] parts = input.Trim().ToLower().Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 if (parts.Length != 2)
                 {
-                    Console.WriteLine("Неправильний формат вводу. Спробуйте ще раз.");
+                    Console.WriteLine("Invalid input. Enter two squares separated by a space, e.g. 'e2 e4'.");
                     continue;
                 }
 
-                if (!board.MovePiece(parts[0], parts[1]))
+                if (board.MovePiece(parts[0], parts[1], currentPlayer))
                 {
-                    Console.WriteLine("Хід неможливий. Спробуйте ще раз.");
+                    currentPlayer = currentPlayer == PieceColor.White ? PieceColor.Black : PieceColor.White;
+                }
+                else
+                {
+                    Console.WriteLine("Move not made. Try again.");
                 }
                 board.DisplayBoard();
             }
@@ -168,16 +193,10 @@ namespace ChessProject
     {
         static void Main(string[] args)
         {
-            // Встановлення UTF-8 кодування для консолі
             Console.OutputEncoding = Encoding.UTF8;
 
-            // Створення нової гри
             Game chessGame = new Game();
-
-            // Ініціалізація гри
             chessGame.Initialize();
-
-            // Запуск гри
             chessGame.Start();
         }
     }
